@@ -177,7 +177,8 @@ def handlebar(ContextInfo):
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
 	
 	START_TIME_STR = '09:31'
-	OP_TIME_STR = '09:35'
+	OP_TIME_STR = '14:57'
+	CHECK_SELL_MACD = '14:55'
 	
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
@@ -383,7 +384,7 @@ def handlebar(ContextInfo):
 
 
 			# 2. MACD 死叉检查 (14:55) - 保持不变
-			if current_time_str == '14:55' and not should_sell: 
+			if current_time_str == CHECK_SELL_MACD and not should_sell: 
 				if daily_info['dif_t_minus_1'] < daily_info['dea_t_minus_1']:
 					should_sell = True
 					sell_reason = "MACD趋势已死叉 (T-1 日已死叉)"
