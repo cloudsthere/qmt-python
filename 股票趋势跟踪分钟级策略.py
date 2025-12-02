@@ -122,7 +122,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = False # 生产环境：设置为 False
+	ContextInfo.is_debug = True # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
@@ -181,8 +181,8 @@ def handlebar(ContextInfo):
 	current_time_full = timetag_to_datetime(bar_timetag, '%Y%m%d%H%M%S')
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
 	
-	START_TIME_STR = '09:48'
-	OP_TIME_STR = '09:54'
+	START_TIME_STR = '09:31'
+	OP_TIME_STR = '09:35'
 	
 	# print(f"当前时间: {current_time_str}")
 	# --------------------------------------------------------
