@@ -8,22 +8,6 @@ class G(): pass
 
 g = G()
 
-# --------------------------------------------------------
-# 【日志/打印 辅助函数】
-# --------------------------------------------------------
-def prod_log(ContextInfo, msg, level='info'):
-	"""
-	生产环境日志控制函数。
-	- 在调试模式下 (is_debug=True)，所有消息都打印。
-	"""
-	if ContextInfo.is_debug:
-		print(f"[{level.upper()}] {msg}")
-		return
-
-	# 生产模式下，只记录关键的 'trade' 和 'warn' 级别的消息
-	if level in ['trade', 'warn', 'error', 'info']:
-		print(f"[{level.upper()}] {msg}")
-
 
 # --------------------------------------------------------
 # 【指标计算辅助函数】
@@ -97,7 +81,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	action = "买入" if is_buy else "卖出"
 	
 	if volume_final < 100 and is_buy: 
-		prod_log(ContextInfo, f"忽略: {stock_code} 买入量不足 100 股 ({volume_final})", level='warn')
+		print(f"忽略: {stock_code} 买入量不足 100 股 ({volume_final})")
 		return
 
 	try:
@@ -114,10 +98,10 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 			userOrderId, 
 			ContextInfo
 		)
-		prod_log(ContextInfo, f"交易成功: {action} {stock_code}: {volume_final} 股 @ {price:.2f}", level='trade')
+		print(f"交易成功: {action} {stock_code}: {volume_final} 股 @ {price:.2f}")
 		
 	except Exception as e:
-		prod_log(ContextInfo, f"交易失败: {action} {stock_code} {volume_final} 股 @ {price:.2f}. 错误: {e}", level='error')
+		print(f"交易失败: {action} {stock_code} {volume_final} 股 @ {price:.2f}. 错误: {e}")
 
 # --------------------------------------------------------
 # 【策略主体：init 和 handlebar】
@@ -161,10 +145,10 @@ def init(ContextInfo):
 		start_dt = today - datetime.timedelta(days=ContextInfo.look_back_days + 10) 
 		start_date = start_dt.strftime('%Y%m%d')
 	
-	# prod_log(ContextInfo, f"正在下载策略所需历史日线数据。起始日期: {start_date} (需 {ContextInfo.look_back_days}日数据量)", level='info')
+	# print(f"正在下载策略所需历史日线数据。起始日期: {start_date} (需 {ContextInfo.look_back_days}日数据量)")
 	# download_history_data 等函数调用省略
 	
-	# prod_log(ContextInfo, "历史日线数据下载任务已发送。", level='info')
+	# print("历史日线数据下载任务已发送。")
 
 def handlebar(ContextInfo):
 	if not ContextInfo.is_last_bar() and not ContextInfo.is_debug: 
@@ -177,14 +161,14 @@ def handlebar(ContextInfo):
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
 	
 	START_TIME_STR = '09:31'
-	OP_TIME_STR = '14:57'
-	CHECK_SELL_MACD = '14:55'
+	OP_TIME_STR = '09:35'
+	CHECK_MACD_SELL_TIME = '14:55'
 	
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
 	# --------------------------------------------------------
 	if current_time_str == START_TIME_STR : 
-		prod_log(ContextInfo, f"[{current_time_log}] 阶段一：每日数据初始化开始。", level='info')
+		print(f"[{current_time_log}] 阶段一：每日数据初始化开始。")
 		
 		all_codes = ContextInfo.stock_pool
 		daily_data = ContextInfo.get_market_data_ex(
@@ -246,7 +230,7 @@ def handlebar(ContextInfo):
 				'dynamic_drop_pct': dynamic_drop_pct # **【V1.18.2 新增】动态百分比阈值**
 			}
 		
-		prod_log(ContextInfo, f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。", level='info')
+		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
 		
 	# --------------------------------------------------------
 	# 【阶段二：买入检查（09:35）】
@@ -254,11 +238,11 @@ def handlebar(ContextInfo):
 	if current_time_str == OP_TIME_STR:
 
 		
-		prod_log(ContextInfo, f"[{current_time_log}] 阶段二：买入检查开始。", level='info')
+		print(f"[{current_time_log}] 阶段二：买入检查开始。")
 		
 		stocks_to_check = list(g.DAILY_DATA.keys())
 		if not stocks_to_check:
-			prod_log(ContextInfo, "因缺少指标数据，无法执行买入检查。", level='warn')
+			print("因缺少指标数据，无法执行买入检查。")
 			return
 
 		# A. 获取当前 09:35 的价格 (close)
@@ -296,7 +280,7 @@ def handlebar(ContextInfo):
 					
 					if current_drop_from_open < dynamic_drop_pct:
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
-						prod_log(ContextInfo, f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。", level='warn')
+						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。")
 						continue 
 					
 				qualified_candidates.append({
@@ -333,7 +317,7 @@ def handlebar(ContextInfo):
 					g.HOLDING_BUY_DATE[stock] = current_day 
 			
 		if len(target_buys) > 0:
-			prod_log(ContextInfo, f"[{current_time_log}] 买入操作完成。目标: {[item['code'] for item in target_buys]}", level='info')
+			print(f"[{current_time_log}] 买入操作完成。目标: {[item['code'] for item in target_buys]}")
 
 	# --------------------------------------------------------
 	# 【阶段三：持仓监控（MACD 死叉/日内开盘价跌幅 清仓）】
@@ -380,15 +364,15 @@ def handlebar(ContextInfo):
 				if current_daily_drop_from_open < dynamic_drop_pct:
 					should_sell = True
 					sell_reason = f"日内跌幅 ({current_daily_drop_from_open*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct*100:.2f}%)"
-					prod_log(ContextInfo, f"[{current_time_log}] 触发止损 {stock}：{sell_reason}", level='warn')
+					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
 
 
 			# 2. MACD 死叉检查 (14:55) - 保持不变
-			if current_time_str == CHECK_SELL_MACD and not should_sell: 
+			if current_time_str == CHECK_MACD_SELL_TIME and not should_sell: 
 				if daily_info['dif_t_minus_1'] < daily_info['dea_t_minus_1']:
 					should_sell = True
 					sell_reason = "MACD趋势已死叉 (T-1 日已死叉)"
-					prod_log(ContextInfo, f"[{current_time_log}] 触发卖出 {stock}：{sell_reason}", level='info')
+					print(f"[{current_time_log}] 触发卖出 {stock}：{sell_reason}")
 			
 			
 			if should_sell and volume > 0:
