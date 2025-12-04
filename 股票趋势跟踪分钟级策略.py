@@ -65,6 +65,11 @@ def get_current_positions(accountid, ContextInfo):
 			holdinglist[obj.m_strInstrumentID + "." + obj.m_strExchangeID] = obj.m_nCanUseVolume
 	return holdinglist
 
+def get_account_asset(account_id):
+	account = get_trade_detail_data(account_id, 'STOCK', 'ACCOUNT')
+	# print(account)
+	return account[0].m_dBalance
+
 
 def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id):
 	"""
@@ -73,7 +78,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	opType = 23 if is_buy else 24     
 	orderType = 1101          
 	prType = 14               
-	strategyName = "股票趋势跟踪分钟级策略" # **策略名称更新 V18.2**
+	strategyName = "股票趋势跟踪分钟级策略v1.20" # **策略名称更新 V18.2**
 	quickTrade = 1 
 	userOrderId = str(int(time.time() * 1000)) 
 	
@@ -112,7 +117,7 @@ def init(ContextInfo):
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
-	ContextInfo.account_id = '40098981' 
+	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -302,8 +307,7 @@ def handlebar(ContextInfo):
 		# C. 执行买入 (资金管理部分保持不变)
 		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
 		try:
-			acc_obj = ContextInfo.get_account(ContextInfo.account_id)
-			total_asset = acc_obj.m_dAvailable + acc_obj.m_dMarketValue
+			total_asset = get_account_asset(ContextInfo.account_id)
 		except:
 			total_asset = 1000000 # 默认为 100 万
 		
