@@ -73,7 +73,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	opType = 23 if is_buy else 24     
 	orderType = 1101          
 	prType = 14               
-	strategyName = "Stock_MACD_Momentum_V18_2_ATR" # **策略名称更新 V18.2**
+	strategyName = "股票趋势跟踪分钟级策略" # **策略名称更新 V18.2**
 	quickTrade = 1 
 	userOrderId = str(int(time.time() * 1000)) 
 	
