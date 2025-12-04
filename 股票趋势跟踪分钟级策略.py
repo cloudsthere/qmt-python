@@ -37,6 +37,7 @@ def calculate_atr(df, period=14):
 	return atr # 返回ATR的绝对值 (价格单位)
 
 # MACD 指标计算函数 (保持不变)
+# **注意：此函数接受一个完整的 close_series**
 def calculate_macd(close_series, short_period=12, long_period=26, signal_period=9):
 	""" 计算 MACD 指标 (DIF, DEA, MACD Hist)。 """
 	if close_series.empty or len(close_series) < long_period:
@@ -49,6 +50,7 @@ def calculate_macd(close_series, short_period=12, long_period=26, signal_period=
 	dea = dif.ewm(span=signal_period, adjust=False).mean()
 	macd_hist = (dif - dea) * 2
 	
+	# 返回完整的序列
 	return dif, dea, macd_hist
 
 # --------------------------------------------------------
@@ -75,12 +77,12 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	"""
 	下单函数，在生产环境应包含健壮的异常处理。
 	"""
-	opType = 23 if is_buy else 24     
-	orderType = 1101          
-	prType = 14               
-	strategyName = "股票趋势跟踪分钟级策略v1.20" # **策略名称更新 V18.2**
-	quickTrade = 1 
-	userOrderId = str(int(time.time() * 1000)) 
+	opType = 23 if is_buy else 24      
+	orderType = 1101         
+	prType = 14              
+	strategyName = "股票趋势跟踪分钟级策略v1.21" # **策略名称更新 V18.2**
+	quickTrade = 1
+	userOrderId = str(int(time.time() * 1000))
 	
 	volume_final = int(volume_abs)
 	action = "买入" if is_buy else "卖出"
@@ -113,7 +115,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = False # 生产环境：设置为 False
+	ContextInfo.is_debug = True # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
@@ -126,8 +128,8 @@ def init(ContextInfo):
 	ContextInfo.MACD_SIGNAL = 9
 	
 	# **【V1.18.2 修改】动态 ATR 止损/过滤参数**
-	ContextInfo.ATR_PERIOD = 14       # ATR 计算周期
-	ContextInfo.ATR_MULTIPLIER = 2.0  # ATR 止损乘数 (例如 2.0 代表 2倍 ATR 止损)
+	ContextInfo.ATR_PERIOD = 14      # ATR 计算周期
+	ContextInfo.ATR_MULTIPLIER = 2.0 # ATR 止损乘数 (例如 2.0 代表 2倍 ATR 止损)
 	# ContextInfo.MAX_DAILY_DROP 参数不再使用
 	
 	# 历史数据量需要满足 MACD 和 ATR 的最大周期
@@ -150,10 +152,6 @@ def init(ContextInfo):
 		for stock in ContextInfo.stock_pool: 
 			download_history_data(stock, "1m", start_date, end_date)
 	
-	# print(f"正在下载策略所需历史日线数据。起始日期: {start_date} (需 {ContextInfo.look_back_days}日数据量)")
-	# download_history_data 等函数调用省略
-	
-	# print("历史日线数据下载任务已发送。")
 
 def handlebar(ContextInfo):
 	# 仅在新K线时处理
@@ -171,8 +169,8 @@ def handlebar(ContextInfo):
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
 	
 	START_TIME_STR = '09:31'
-	OP_TIME_STR = '09:35'
-	CHECK_MACD_SELL_TIME = '14:55'
+	OP_TIME_STR = '14:50' # **【修改 2】尾盘买入时间**
+	CHECK_MACD_SELL_TIME = '14:40' # **【修改 3】尾盘死叉卖出检查时间**
 	
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
@@ -195,33 +193,20 @@ def handlebar(ContextInfo):
 		for stock in ContextInfo.stock_pool:
 			df_daily = daily_data.get(stock)
 			
-			if df_daily is None or len(df_daily) < ContextInfo.MACD_LONG + ContextInfo.MACD_SIGNAL + 2: 
+			# 这里只需足够的历史数据用于计算 ATR
+			if df_daily is None or len(df_daily) < ContextInfo.ATR_PERIOD + 1: 
 				continue
 
 			df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
 			
-			# --- MACD 计算 ---
-			close_series = df_daily['close']
-			dif_series, dea_series, macd_hist_series = calculate_macd(
-				close_series, 
-				ContextInfo.MACD_SHORT, 
-				ContextInfo.MACD_LONG, 
-				ContextInfo.MACD_SIGNAL
-			)
-			
-			if pd.isna(dif_series.iloc[-1]) or len(dif_series) < 3:
-				continue
-				
-			dif_t_minus_1 = dif_series.iloc[-2]
-			dea_t_minus_1 = dea_series.iloc[-2]
-			dif_t_minus_2 = dif_series.iloc[-3]
-			dea_t_minus_2 = dea_series.iloc[-3]
-			
-			is_macd_golden_cross = (dif_t_minus_2 <= dea_t_minus_2) and (dif_t_minus_1 > dea_t_minus_1)
+			# MACD 指标在买入/卖出时动态计算
 			
 			# --- 波动率 ATR 计算 --- **【V1.18.2 新增】**
+			# ATR 计算基于历史日线数据
 			atr_abs = calculate_atr(df_daily, ContextInfo.ATR_PERIOD)
 			
+			# T-1 日的收盘价
+			prev_day_close = df_daily['close'].iloc[-2] if len(df_daily) >= 2 else np.nan
 			t_day_open_price = df_daily['open'].iloc[-1]
 			
 			# **【V1.18.2 核心逻辑】计算动态止损/过滤百分比阈值**
@@ -233,17 +218,15 @@ def handlebar(ContextInfo):
 				dynamic_drop_pct = - (drop_abs / t_day_open_price)
 			
 			g.DAILY_DATA[stock] = {
-				't_day_open_price': t_day_open_price,            
-				'dif_t_minus_1': dif_t_minus_1, 
-				'dea_t_minus_1': dea_t_minus_1,
-				'is_macd_golden_cross': is_macd_golden_cross,
+				't_day_open_price': t_day_open_price,             
+				'prev_day_close': prev_day_close, # **【修改 1】新增 T-1 日收盘价**
 				'dynamic_drop_pct': dynamic_drop_pct # **【V1.18.2 新增】动态百分比阈值**
 			}
 		
 		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
 		
 	# --------------------------------------------------------
-	# 【阶段二：买入检查（09:35）】
+	# 【阶段二：买入检查（14:50）】
 	# --------------------------------------------------------
 	if current_time_str == OP_TIME_STR:
 
@@ -255,7 +238,7 @@ def handlebar(ContextInfo):
 			print("因缺少指标数据，无法执行买入检查。")
 			return
 
-		# A. 获取当前 09:35 的价格 (close)
+		# A. 获取当前 14:50 的价格 (close) 和 T-1 日收盘价
 		op_data = ContextInfo.get_market_data_ex(
 			fields=["close"], 
 			stock_code=stocks_to_check, 
@@ -271,19 +254,62 @@ def handlebar(ContextInfo):
 			daily_info = g.DAILY_DATA.get(stock)
 			op_close_bar = op_data.get(stock)
 			
-			if daily_info is None or op_close_bar is None or op_close_bar.empty:
+			if daily_info is None or op_close_bar is None or op_close_bar.empty or np.isnan(daily_info['prev_day_close']):
 				continue
 
 			op_price = op_close_bar['close'].iloc[-1]
-			dif_t_minus_1 = daily_info['dif_t_minus_1']
-			is_golden_cross = daily_info['is_macd_golden_cross']
-			
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan) # **【V1.18.2 动态 ATR 阈值】**
-			# print(f"[{current_time_log}] {stock} - 开盘价: {t_day_open_price}, 09:35价: {op_price}, 动态跌幅阈值: {dynamic_drop_pct*100:.2f}%")
+
+			# --- 【修改 1】动态计算 MACD，并判断金叉 ---
+			# 构建包含 T-1 日收盘价 和 T 日当前分钟收盘价的 close_series
+			close_series_for_macd = pd.Series([daily_info['prev_day_close'], op_price])
+			dif_t, dea_t, _ = calculate_macd(
+				close_series_for_macd, 
+				ContextInfo.MACD_SHORT, 
+				ContextInfo.MACD_LONG, 
+				ContextInfo.MACD_SIGNAL
+			)
+
+			# --- 重新在 14:50 获取完整的日线数据 + 当前分钟数据 ---
+			# 为了确保 MACD 计算的准确性，需要获取完整日线历史数据 + 当日分钟数据
+			all_data = ContextInfo.get_market_data_ex(
+				fields=["close", "high", "low", "open", "preClose"], 
+				stock_code=[stock], 
+				period="1d", 
+				end_time=current_day,
+				count=ContextInfo.look_back_days - 1, # 获取到 T-1 为止的日线数据
+				dividend_type='none'
+			)
+			df_daily = all_data.get(stock)
+			if df_daily is None or df_daily.empty: continue
+			
+			df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
+
+			# 拼接 T 日的当前分钟收盘价
+			close_series_full = pd.concat([df_daily['close'], pd.Series([op_price])])
+			
+			dif_series, dea_series, _ = calculate_macd(
+				close_series_full, 
+				ContextInfo.MACD_SHORT, 
+				ContextInfo.MACD_LONG, 
+				ContextInfo.MACD_SIGNAL
+			)
+
+			if pd.isna(dif_series.iloc[-1]) or len(dif_series) < 3:
+				continue
+				
+			dif_t_minus_1 = dif_series.iloc[-2] # T-1 的 DIF
+			dea_t_minus_1 = dea_series.iloc[-2] # T-1 的 DEA
+			dif_t = dif_series.iloc[-1]         # T 日当前分钟的 DIF
+			dea_t = dea_series.iloc[-1]         # T 日当前分钟的 DEA
+			
+			# **【修改 1 核心】T 日当前分钟金叉判断**
+			is_macd_golden_cross = (dif_t_minus_1 <= dea_t_minus_1) and (dif_t > dea_t)
+			
 			
 			# 严格入场条件：
-			if is_golden_cross:
+			if is_macd_golden_cross:
 				
 				# **【V1.18.2 核心修改】买入过滤：使用动态 ATR 百分比阈值**
 				if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
@@ -293,11 +319,11 @@ def handlebar(ContextInfo):
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
 						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。")
 						continue 
-					
+						
 				qualified_candidates.append({
 					'code': stock, 
 					'op_price': op_price,
-					'macd_strength': dif_t_minus_1, 
+					'macd_strength': dif_t, # 使用 T 日当前的 DIF 作为强度指标
 				})
 		
 		# B. 相对强度排序
@@ -306,10 +332,7 @@ def handlebar(ContextInfo):
 		
 		# C. 执行买入 (资金管理部分保持不变)
 		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
-		try:
-			total_asset = get_account_asset(ContextInfo.account_id)
-		except:
-			total_asset = 1000000 # 默认为 100 万
+		total_asset = get_account_asset(ContextInfo.account_id)
 		
 		target_per_stock = total_asset / ContextInfo.hold_num
 		current_hold_count = len(curr_holdings_dict)
@@ -355,7 +378,7 @@ def handlebar(ContextInfo):
 			daily_info = g.DAILY_DATA.get(stock)
 			latest_bar = latest_data.get(stock)
 			
-			if daily_info is None or latest_bar is None or latest_bar.empty:
+			if daily_info is None or latest_bar is None or latest_bar.empty or np.isnan(daily_info['prev_day_close']):
 				continue
 
 			current_price = latest_bar['close'].iloc[-1]
@@ -377,12 +400,41 @@ def handlebar(ContextInfo):
 					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
 
 
-			# 2. MACD 死叉检查 (14:55) - 保持不变
+			# 2. **【修改 3 核心】MACD 死叉检查 (14:40) - 使用 T 日当前分钟数据**
 			if current_time_str == CHECK_MACD_SELL_TIME and not should_sell: 
-				if daily_info['dif_t_minus_1'] < daily_info['dea_t_minus_1']:
-					should_sell = True
-					sell_reason = "MACD趋势已死叉 (T-1 日已死叉)"
-					print(f"[{current_time_log}] 触发卖出 {stock}：{sell_reason}")
+				
+				# --- 获取完整的日线数据 + 当前分钟数据 ---
+				all_data = ContextInfo.get_market_data_ex(
+					fields=["close"], 
+					stock_code=[stock], 
+					period="1d", 
+					end_time=current_day,
+					count=ContextInfo.look_back_days - 1, # 获取到 T-1 为止的日线数据
+					dividend_type='none'
+				)
+				df_daily = all_data.get(stock)
+				if df_daily is None or df_daily.empty: continue
+				
+				df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
+
+				# 拼接 T 日的当前分钟收盘价
+				close_series_full = pd.concat([df_daily['close'], pd.Series([current_price])])
+				
+				dif_series, dea_series, _ = calculate_macd(
+					close_series_full, 
+					ContextInfo.MACD_SHORT, 
+					ContextInfo.MACD_LONG, 
+					ContextInfo.MACD_SIGNAL
+				)
+
+				if not pd.isna(dif_series.iloc[-1]):
+					dif_t = dif_series.iloc[-1] 
+					dea_t = dea_series.iloc[-1] 
+					
+					if dif_t < dea_t: # T 日当前分钟死叉
+						should_sell = True
+						sell_reason = "MACD趋势已死叉 (T 日当前分钟死叉)"
+						print(f"[{current_time_log}] 触发卖出 {stock}：{sell_reason}")
 			
 			
 			if should_sell and volume > 0:
