@@ -108,7 +108,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = True # 生产环境：设置为 False
+	ContextInfo.is_debug = False # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
@@ -130,6 +130,7 @@ def init(ContextInfo):
 	
 	# 股票池 (保持不变，使用沪深300+中证500)
 	stock_pool = ContextInfo.get_stock_list_in_sector('沪深300') + ContextInfo.get_stock_list_in_sector('中证500')
+	# stock_pool = ContextInfo.get_stock_list_in_sector('中证1000')
 	ContextInfo.stock_pool = list(set(stock_pool))
 	
 	g.DAILY_DATA = {} 
@@ -138,12 +139,11 @@ def init(ContextInfo):
 	# ---------------- 2. 数据预下载 【动态计算 start_date】 ----------------
 	
 	if ContextInfo.is_debug:
-		start_date = "20250101"
-	else:
-		# 动态计算所需的起始日期：当前日期 - look_back_days
-		today = datetime.date.today()
-		start_dt = today - datetime.timedelta(days=ContextInfo.look_back_days + 10) 
-		start_date = start_dt.strftime('%Y%m%d')
+		start_date = "20250501"
+		end_date = ""
+		print(f"调试模式: 下载历史数据从 {start_date} 开始。")
+		for stock in ContextInfo.stock_pool: 
+			download_history_data(stock, "1m", start_date, end_date)
 	
 	# print(f"正在下载策略所需历史日线数据。起始日期: {start_date} (需 {ContextInfo.look_back_days}日数据量)")
 	# download_history_data 等函数调用省略
@@ -151,8 +151,13 @@ def init(ContextInfo):
 	# print("历史日线数据下载任务已发送。")
 
 def handlebar(ContextInfo):
-	if not ContextInfo.is_last_bar() and not ContextInfo.is_debug: 
+	# 仅在新K线时处理
+	if not ContextInfo.is_new_bar():
 		return
+
+	if not ContextInfo.is_debug: 
+		if not ContextInfo.is_last_bar():
+			return
 	
 	bar_timetag = ContextInfo.get_bar_timetag(ContextInfo.barpos)
 	current_time_str = timetag_to_datetime(bar_timetag, '%H:%M')
@@ -270,6 +275,7 @@ def handlebar(ContextInfo):
 			
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan) # **【V1.18.2 动态 ATR 阈值】**
+			# print(f"[{current_time_log}] {stock} - 开盘价: {t_day_open_price}, 09:35价: {op_price}, 动态跌幅阈值: {dynamic_drop_pct*100:.2f}%")
 			
 			# 严格入场条件：
 			if is_golden_cross:
