@@ -85,7 +85,6 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	opType = 23 if is_buy else 24      
 	orderType = 1101         
 	prType = 14              
-	strategyName = "股票趋势跟踪分钟级策略v1.21" # **策略名称更新 V18.2**
 	quickTrade = 1
 	userOrderId = str(int(time.time() * 1000))
 	
@@ -105,7 +104,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 			prType, 
 			price, 
 			volume_final, 
-			strategyName, 
+			ContextInfo.strategyName, 
 			quickTrade, 
 			userOrderId, 
 			ContextInfo
@@ -120,11 +119,12 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = False # 生产环境：设置为 False
+	ContextInfo.is_debug = True # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.22" # **策略名称更新 V18.2**
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -237,6 +237,21 @@ def handlebar(ContextInfo):
 
 		
 		print(f"[{current_time_log}] 阶段二：买入检查开始。")
+
+		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
+		total_asset = get_account_asset(ContextInfo.account_id)
+		account = get_trade_detail_data(ContextInfo.account_id, 'STOCK', 'ACCOUNT')
+		# print(account)
+		available_asset = account[0].m_dAvailable
+		total_asset = account[0].m_dBalance
+		print(f"目前可用资金: {available_asset:.2f} 元, 账户总资产: {total_asset:.2f} 元")
+		# print(f"目前总资产: {total_asset:.2f} 元")
+		# total_asset = 1000000
+		
+		current_hold_count = len(curr_holdings_dict)
+		if current_hold_count >= ContextInfo.hold_num: 
+			print(f"[{current_time_log}] 阶段二：已满仓，不进行买入。")
+			return
 		
 		stocks_to_check = list(g.DAILY_DATA.keys())
 		if not stocks_to_check:
@@ -336,20 +351,6 @@ def handlebar(ContextInfo):
 		target_buys = qualified_candidates[:ContextInfo.hold_num]
 		
 		# C. 执行买入 (资金管理部分保持不变)
-		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
-		total_asset = get_account_asset(ContextInfo.account_id)
-		account = get_trade_detail_data(ContextInfo.account_id, 'STOCK', 'ACCOUNT')
-		# print(account)
-		available_asset = account[0].m_dAvailable
-		total_asset = account[0].m_dBalance
-		print(f"目前可用资金: {available_asset:.2f} 元, 账户总资产: {total_asset:.2f} 元")
-		# print(f"目前总资产: {total_asset:.2f} 元")
-		# total_asset = 1000000
-		
-		current_hold_count = len(curr_holdings_dict)
-		if current_hold_count >= ContextInfo.hold_num: 
-			print(f"[{current_time_log}] 阶段二：已满仓，不进行买入。")
-			return
 		target_per_stock = available_asset / (ContextInfo.hold_num - current_hold_count)
 		
 		for item in target_buys:
