@@ -119,7 +119,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = True # 生产环境：设置为 False
+	ContextInfo.is_debug = False # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
@@ -180,7 +180,7 @@ def handlebar(ContextInfo):
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
 	# --------------------------------------------------------
-	if current_time_str == START_TIME_STR : 
+	if current_time_str >= START_TIME_STR and not g.DAILY_DATA:
 		print(f"[{current_time_log}] 阶段一：每日数据初始化开始。")
 		
 		all_codes = ContextInfo.stock_pool
@@ -406,6 +406,7 @@ def handlebar(ContextInfo):
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan)
 			
+			print(f"[{current_time_log}] 检查持仓 {stock}：当前价 {current_price:.2f}, 开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
 			if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
 				# 跌幅相对于开盘价的百分比
 				current_daily_drop_from_open = (current_price / t_day_open_price) - 1
