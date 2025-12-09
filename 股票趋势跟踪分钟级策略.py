@@ -124,7 +124,7 @@ def init(ContextInfo):
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.22" # **策略名称更新 V18.2**
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.24" # **策略名称更新 V1.23**
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -157,6 +157,7 @@ def init(ContextInfo):
 		print(f"调试模式: 下载历史数据从 {start_date} 开始。")
 		for stock in ContextInfo.stock_pool: 
 			download_history_data(stock, "1m", start_date, end_date)
+		print("历史数据下载任务已发送。")
 	
 
 def handlebar(ContextInfo):
@@ -282,16 +283,6 @@ def handlebar(ContextInfo):
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan) # **【V1.18.2 动态 ATR 阈值】**
 
-			# --- 【修改 1】动态计算 MACD，并判断金叉 ---
-			# 构建包含 T-1 日收盘价 和 T 日当前分钟收盘价的 close_series
-			close_series_for_macd = pd.Series([daily_info['prev_day_close'], op_price])
-			dif_t, dea_t, _ = calculate_macd(
-				close_series_for_macd, 
-				ContextInfo.MACD_SHORT, 
-				ContextInfo.MACD_LONG, 
-				ContextInfo.MACD_SIGNAL
-			)
-
 			# --- 重新在 14:50 获取完整的日线数据 + 当前分钟数据 ---
 			# 为了确保 MACD 计算的准确性，需要获取完整日线历史数据 + 当日分钟数据
 			all_data = ContextInfo.get_market_data_ex(
@@ -328,9 +319,12 @@ def handlebar(ContextInfo):
 			# **【修改 1 核心】T 日当前分钟金叉判断**
 			is_macd_golden_cross = (dif_t_minus_1 <= dea_t_minus_1) and (dif_t > dea_t)
 			
+			# **【V1.23 新增条件】金叉在0轴上方**
+			is_above_zero_axis = (dif_t > 0) and (dea_t > 0)
+			
 			
 			# 严格入场条件：
-			if is_macd_golden_cross:
+			if is_macd_golden_cross and is_above_zero_axis: # 【修改】增加0轴上方条件
 				
 				# **【V1.18.2 核心修改】买入过滤：使用动态 ATR 百分比阈值**
 				if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
@@ -345,7 +339,11 @@ def handlebar(ContextInfo):
 					'code': stock, 
 					'op_price': op_price,
 					'macd_strength': dif_t, # 使用 T 日当前的 DIF 作为强度指标
+					'dif_value': dif_t,    # 新增：记录DIF值
+					'dea_value': dea_t     # 新增：记录DEA值
 				})
+			elif is_macd_golden_cross and not is_above_zero_axis:
+				print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
 		
 		# B. 相对强度排序
 		qualified_candidates.sort(key=lambda x: x['macd_strength'], reverse=True)
@@ -357,6 +355,8 @@ def handlebar(ContextInfo):
 		for item in target_buys:
 			stock = item['code']
 			buy_price = item['op_price']
+			dif_value = item['dif_value']
+			dea_value = item['dea_value']
 			
 			if current_hold_count < ContextInfo.hold_num and stock not in curr_holdings_dict:
 				amount = int(target_per_stock / buy_price / 100) * 100
