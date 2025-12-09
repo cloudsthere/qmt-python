@@ -134,7 +134,8 @@ def init(ContextInfo):
 	
 	# **【V1.18.2 修改】动态 ATR 止损/过滤参数**
 	ContextInfo.ATR_PERIOD = 14      # ATR 计算周期
-	ContextInfo.ATR_MULTIPLIER = 2.0 # ATR 止损乘数 (例如 2.0 代表 2倍 ATR 止损)
+	# ContextInfo.ATR_MULTIPLIER = 2.0 # ATR 止损乘数 (例如 2.0 代表 2倍 ATR 止损)
+	ContextInfo.ATR_MULTIPLIER = 1
 	# ContextInfo.MAX_DAILY_DROP 参数不再使用
 	
 	# 历史数据量需要满足 MACD 和 ATR 的最大周期
@@ -180,7 +181,7 @@ def handlebar(ContextInfo):
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
 	# --------------------------------------------------------
-	if current_time_str >= START_TIME_STR and not g.DAILY_DATA:
+	if current_time_str == START_TIME_STR:
 		print(f"[{current_time_log}] 阶段一：每日数据初始化开始。")
 		
 		all_codes = ContextInfo.stock_pool
@@ -227,7 +228,7 @@ def handlebar(ContextInfo):
 				'prev_day_close': prev_day_close, # **【修改 1】新增 T-1 日收盘价**
 				'dynamic_drop_pct': dynamic_drop_pct # **【V1.18.2 新增】动态百分比阈值**
 			}
-		
+
 		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
 		
 	# --------------------------------------------------------
@@ -337,7 +338,7 @@ def handlebar(ContextInfo):
 					
 					if current_drop_from_open < dynamic_drop_pct:
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
-						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。")
+						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
 						continue 
 						
 				qualified_candidates.append({
@@ -406,14 +407,14 @@ def handlebar(ContextInfo):
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan)
 			
-			print(f"[{current_time_log}] 检查持仓 {stock}：当前价 {current_price:.2f}, 开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
+			# print(f"[{current_time_log}] 检查持仓 {stock}：当前价 {current_price:.2f}, 开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
 			if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
 				# 跌幅相对于开盘价的百分比
 				current_daily_drop_from_open = (current_price / t_day_open_price) - 1
 				
 				if current_daily_drop_from_open < dynamic_drop_pct:
 					should_sell = True
-					sell_reason = f"日内跌幅 ({current_daily_drop_from_open*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct*100:.2f}%)"
+					sell_reason = f"日内跌幅 ({current_daily_drop_from_open*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct*100:.2f}%)，当前价: {current_price:.2f}，开盘价: {t_day_open_price:.2f}"
 					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
 
 
