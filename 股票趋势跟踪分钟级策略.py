@@ -143,6 +143,7 @@ def init(ContextInfo):
 	
 	# 股票池 (保持不变，使用沪深300+中证500)
 	stock_pool = ContextInfo.get_stock_list_in_sector('沪深300') + ContextInfo.get_stock_list_in_sector('中证500')
+	print(f"股票池包含 {len(stock_pool)} 只股票。")
 	# stock_pool = ContextInfo.get_stock_list_in_sector('中证1000')
 	ContextInfo.stock_pool = list(set(stock_pool))
 	
@@ -174,6 +175,8 @@ def handlebar(ContextInfo):
 	current_time_log = timetag_to_datetime(bar_timetag, '%Y-%m-%d %H:%M')
 	current_time_full = timetag_to_datetime(bar_timetag, '%Y%m%d%H%M%S')
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
+	# print(current_time_log)
+	# return
 	
 	START_TIME_STR = '09:31'
 	OP_TIME_STR = '14:50' # **【修改 2】尾盘买入时间**
