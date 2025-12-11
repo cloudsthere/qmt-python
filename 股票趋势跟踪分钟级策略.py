@@ -124,7 +124,7 @@ def init(ContextInfo):
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.24" # **策略名称更新 V1.23**
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.24.1" 
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -147,17 +147,18 @@ def init(ContextInfo):
 	ContextInfo.stock_pool = list(set(stock_pool))
 	
 	g.DAILY_DATA = {} 
+	g.DAILY_DATE = ''
 	g.HOLDING_BUY_DATE = {} 
 	
 	# ---------------- 2. 数据预下载 【动态计算 start_date】 ----------------
 	
-	if ContextInfo.is_debug:
-		start_date = "20250501"
-		end_date = ""
-		print(f"调试模式: 下载历史数据从 {start_date} 开始。")
-		for stock in ContextInfo.stock_pool: 
-			download_history_data(stock, "1m", start_date, end_date)
-		print("历史数据下载任务已发送。")
+	# if ContextInfo.is_debug:
+	# 	start_date = "20250501"
+	# 	end_date = ""
+	# 	print(f"调试模式: 下载历史数据从 {start_date} 开始。")
+	# 	for stock in ContextInfo.stock_pool: 
+	# 		download_history_data(stock, "1m", start_date, end_date)
+	# 	print("历史数据下载任务已发送。")
 	
 
 def handlebar(ContextInfo):
@@ -182,7 +183,7 @@ def handlebar(ContextInfo):
 	# --------------------------------------------------------
 	# 【阶段一：每日数据初始化（早盘 09:31）】
 	# --------------------------------------------------------
-	if current_time_str == START_TIME_STR:
+	if current_time_str >= START_TIME_STR and g.DAILY_DATE != current_day:
 		print(f"[{current_time_log}] 阶段一：每日数据初始化开始。")
 		
 		all_codes = ContextInfo.stock_pool
@@ -195,6 +196,7 @@ def handlebar(ContextInfo):
 			dividend_type='none'
 		)
 		
+		g.DAILY_DATE = current_day
 		g.DAILY_DATA = {}
 		
 		for stock in ContextInfo.stock_pool:
@@ -231,6 +233,16 @@ def handlebar(ContextInfo):
 			}
 
 		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
+
+		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
+		# print(curr_holdings_dict)
+
+		for stock, volume in curr_holdings_dict.items():
+			daily_info = g.DAILY_DATA.get(stock)
+			t_day_open_price = daily_info.get('t_day_open_price', 0)
+			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan)
+			print(f"持仓 {stock}：开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
+
 		
 	# --------------------------------------------------------
 	# 【阶段二：买入检查（14:50）】
@@ -332,7 +344,7 @@ def handlebar(ContextInfo):
 					
 					if current_drop_from_open < dynamic_drop_pct:
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
-						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
+						# print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
 						continue 
 						
 				qualified_candidates.append({
@@ -342,8 +354,8 @@ def handlebar(ContextInfo):
 					'dif_value': dif_t,    # 新增：记录DIF值
 					'dea_value': dea_t     # 新增：记录DEA值
 				})
-			elif is_macd_golden_cross and not is_above_zero_axis:
-				print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
+			# elif is_macd_golden_cross and not is_above_zero_axis:
+			# 	print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
 		
 		# B. 相对强度排序
 		qualified_candidates.sort(key=lambda x: x['macd_strength'], reverse=True)
