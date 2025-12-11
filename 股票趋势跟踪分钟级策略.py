@@ -124,7 +124,7 @@ def init(ContextInfo):
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.24.1" 
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25" 
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -153,12 +153,12 @@ def init(ContextInfo):
 	# ---------------- 2. 数据预下载 【动态计算 start_date】 ----------------
 	
 	# if ContextInfo.is_debug:
-	# 	start_date = "20250501"
-	# 	end_date = ""
-	# 	print(f"调试模式: 下载历史数据从 {start_date} 开始。")
-	# 	for stock in ContextInfo.stock_pool: 
-	# 		download_history_data(stock, "1m", start_date, end_date)
-	# 	print("历史数据下载任务已发送。")
+	#   start_date = "20250501"
+	#   end_date = ""
+	#   print(f"调试模式: 下载历史数据从 {start_date} 开始。")
+	#   for stock in ContextInfo.stock_pool: 
+	#       download_history_data(stock, "1m", start_date, end_date)
+	#   print("历史数据下载任务已发送。")
 	
 
 def handlebar(ContextInfo):
@@ -219,17 +219,26 @@ def handlebar(ContextInfo):
 			t_day_open_price = df_daily['open'].iloc[-1]
 			
 			# **【V1.18.2 核心逻辑】计算动态止损/过滤百分比阈值**
-			dynamic_drop_pct = np.nan
-			if not np.isnan(atr_abs) and t_day_open_price > 0:
+			dynamic_drop_pct_open = np.nan
+			dynamic_drop_pct_prev_close = np.nan # 【新增】基于 T-1 日收盘价的百分比
+			if not np.isnan(atr_abs) and atr_abs > 0:
 				# 跌幅的绝对价格 = ATR_ABS * MULTIPLIER
 				drop_abs = atr_abs * ContextInfo.ATR_MULTIPLIER
-				# 将绝对价格转化为相对于当日开盘价的百分比跌幅 (负值)
-				dynamic_drop_pct = - (drop_abs / t_day_open_price)
+				
+				# 1. 动态百分比：相对于当日开盘价 (Buy Filter)
+				if t_day_open_price > 0:
+					dynamic_drop_pct_open = - (drop_abs / t_day_open_price)
+					
+				# 2. 动态百分比：相对于 T-1 日收盘价 (Sell Stop) 【修改逻辑】
+				if prev_day_close > 0:
+					dynamic_drop_pct_prev_close = - (drop_abs / prev_day_close)
+
 			
 			g.DAILY_DATA[stock] = {
-				't_day_open_price': t_day_open_price,             
+				't_day_open_price': t_day_open_price,                      
 				'prev_day_close': prev_day_close, # **【修改 1】新增 T-1 日收盘价**
-				'dynamic_drop_pct': dynamic_drop_pct # **【V1.18.2 新增】动态百分比阈值**
+				'dynamic_drop_pct': dynamic_drop_pct_open, # 沿用：用于买入过滤 (基准：开盘价)
+				'dynamic_drop_pct_prev_close': dynamic_drop_pct_prev_close # 【新增】用于止损 (基准：T-1 收盘价)
 			}
 
 		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
@@ -240,8 +249,8 @@ def handlebar(ContextInfo):
 		for stock, volume in curr_holdings_dict.items():
 			daily_info = g.DAILY_DATA.get(stock)
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
-			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan)
-			print(f"持仓 {stock}：开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
+			dynamic_drop_pct_stop = daily_info.get('dynamic_drop_pct_prev_close', np.nan) # 使用新的止损阈值
+			print(f"持仓 {stock}：T日开盘价 {t_day_open_price:.2f}, 动态ATR止损 (基准:T-1收盘价) {dynamic_drop_pct_stop*100:.2f}%")
 
 		
 	# --------------------------------------------------------
@@ -325,8 +334,8 @@ def handlebar(ContextInfo):
 				
 			dif_t_minus_1 = dif_series.iloc[-2] # T-1 的 DIF
 			dea_t_minus_1 = dea_series.iloc[-2] # T-1 的 DEA
-			dif_t = dif_series.iloc[-1]         # T 日当前分钟的 DIF
-			dea_t = dea_series.iloc[-1]         # T 日当前分钟的 DEA
+			dif_t = dif_series.iloc[-1]          # T 日当前分钟的 DIF
+			dea_t = dea_series.iloc[-1]          # T 日当前分钟的 DEA
 			
 			# **【修改 1 核心】T 日当前分钟金叉判断**
 			is_macd_golden_cross = (dif_t_minus_1 <= dea_t_minus_1) and (dif_t > dea_t)
@@ -338,7 +347,7 @@ def handlebar(ContextInfo):
 			# 严格入场条件：
 			if is_macd_golden_cross and is_above_zero_axis: # 【修改】增加0轴上方条件
 				
-				# **【V1.18.2 核心修改】买入过滤：使用动态 ATR 百分比阈值**
+				# **【V1.18.2 核心修改】买入过滤：使用动态 ATR 百分比阈值 (基于开盘价)**
 				if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
 					current_drop_from_open = (op_price / t_day_open_price) - 1
 					
@@ -351,12 +360,12 @@ def handlebar(ContextInfo):
 					'code': stock, 
 					'op_price': op_price,
 					'macd_strength': dif_t, # 使用 T 日当前的 DIF 作为强度指标
-					'dif_value': dif_t,    # 新增：记录DIF值
-					'dea_value': dea_t     # 新增：记录DEA值
+					'dif_value': dif_t,     # 新增：记录DIF值
+					'dea_value': dea_t      # 新增：记录DEA值
 				})
 			# elif is_macd_golden_cross and not is_above_zero_axis:
-			# 	print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
-		
+			#     print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
+			
 		# B. 相对强度排序
 		qualified_candidates.sort(key=lambda x: x['macd_strength'], reverse=True)
 		target_buys = qualified_candidates[:ContextInfo.hold_num]
@@ -382,7 +391,7 @@ def handlebar(ContextInfo):
 			print(f"[{current_time_log}] 买入操作完成。目标: {[item['code'] for item in target_buys]}")
 
 	# --------------------------------------------------------
-	# 【阶段三：持仓监控（MACD 死叉/日内开盘价跌幅 清仓）】
+	# 【阶段三：持仓监控（MACD 死叉/T-1日收盘价跌幅 清仓）】
 	# --------------------------------------------------------
 	else:
 		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
@@ -415,18 +424,20 @@ def handlebar(ContextInfo):
 			should_sell = False
 			sell_reason = ""
 			
-			# 1. **【V1.18.2 核心修改】动态 ATR 日内止损检查** (基准价：当日开盘价)
-			t_day_open_price = daily_info.get('t_day_open_price', 0)
-			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan)
+			# 1. **【V1.24.1 核心修改】动态 ATR 日内止损检查** (基准价：T-1 日收盘价)
 			
-			# print(f"[{current_time_log}] 检查持仓 {stock}：当前价 {current_price:.2f}, 开盘价 {t_day_open_price:.2f}, 动态ATR止损 {dynamic_drop_pct*100:.2f}%")
-			if t_day_open_price > 0 and not np.isnan(dynamic_drop_pct):
-				# 跌幅相对于开盘价的百分比
-				current_daily_drop_from_open = (current_price / t_day_open_price) - 1
+			# 【修改】使用 T-1 日收盘价作为基准
+			base_price = daily_info.get('prev_day_close', 0)
+			# 【修改】使用基于 T-1 日收盘价计算的百分比阈值
+			dynamic_drop_pct_stop = daily_info.get('dynamic_drop_pct_prev_close', np.nan)
+			
+			if base_price > 0 and not np.isnan(dynamic_drop_pct_stop):
+				# 跌幅相对于 T-1 收盘价的百分比
+				current_daily_drop_from_base = (current_price / base_price) - 1
 				
-				if current_daily_drop_from_open < dynamic_drop_pct:
+				if current_daily_drop_from_base < dynamic_drop_pct_stop:
 					should_sell = True
-					sell_reason = f"日内跌幅 ({current_daily_drop_from_open*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct*100:.2f}%)，当前价: {current_price:.2f}，开盘价: {t_day_open_price:.2f}"
+					sell_reason = f"日内/持仓跌幅 ({current_daily_drop_from_base*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct_stop*100:.2f}%)，当前价: {current_price:.2f}，T-1收盘价: {base_price:.2f}"
 					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
 
 
