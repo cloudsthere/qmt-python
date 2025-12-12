@@ -119,12 +119,12 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 # --------------------------------------------------------
 
 def init(ContextInfo):
-	ContextInfo.is_debug = False # 生产环境：设置为 False
+	# ContextInfo.do_back_test = False # 生产环境：设置为 False
 	print("策略初始化开始。")
 	
 	# ---------------- 1. 策略参数设置 ----------------
-	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25.1" 
+	ContextInfo.account_id = '40098981' if ContextInfo.do_back_test else '8887911006'
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25.2" 
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -152,7 +152,7 @@ def init(ContextInfo):
 	
 	# ---------------- 2. 数据预下载 【动态计算 start_date】 ----------------
 	
-	# if ContextInfo.is_debug:
+	# if ContextInfo.do_back_test:
 	#   start_date = "20250501"
 	#   end_date = ""
 	#   print(f"调试模式: 下载历史数据从 {start_date} 开始。")
@@ -166,7 +166,7 @@ def handlebar(ContextInfo):
 	if not ContextInfo.is_new_bar():
 		return
 
-	if not ContextInfo.is_debug: 
+	if not ContextInfo.do_back_test: 
 		if not ContextInfo.is_last_bar():
 			return
 	
@@ -203,7 +203,11 @@ def handlebar(ContextInfo):
 			df_daily = daily_data.get(stock)
 			
 			# 这里只需足够的历史数据用于计算 ATR
-			if df_daily is None or len(df_daily) < ContextInfo.ATR_PERIOD + 1: 
+			if df_daily is None:
+				print(f"[{current_time_log}] 获取 {stock} 日线数据失败。")
+				continue
+			if len(df_daily) < ContextInfo.ATR_PERIOD + 1: 
+				print(f"[{current_time_log}] {stock} 日线数据不足，无法计算 ATR。")
 				continue
 
 			df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
@@ -298,6 +302,7 @@ def handlebar(ContextInfo):
 			op_close_bar = op_data.get(stock)
 			
 			if daily_info is None or op_close_bar is None or op_close_bar.empty or np.isnan(daily_info['prev_day_close']):
+				print(f"[{current_time_log}] 阶段二：缺少指标数据，无法执行买入检查。")
 				continue
 
 			op_price = op_close_bar['close'].iloc[-1]
@@ -330,6 +335,7 @@ def handlebar(ContextInfo):
 			)
 
 			if pd.isna(dif_series.iloc[-1]) or len(dif_series) < 3:
+				print(f"[{current_time_log}] 阶段二：无法计算 MACD 指标，跳过 {stock}。")
 				continue
 				
 			dif_t_minus_1 = dif_series.iloc[-2] # T-1 的 DIF
