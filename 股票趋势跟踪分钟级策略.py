@@ -124,7 +124,7 @@ def init(ContextInfo):
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.is_debug else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25" 
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25.1" 
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -353,7 +353,7 @@ def handlebar(ContextInfo):
 					
 					if current_drop_from_open < dynamic_drop_pct:
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
-						# print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
+						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
 						continue 
 						
 				qualified_candidates.append({
@@ -363,9 +363,12 @@ def handlebar(ContextInfo):
 					'dif_value': dif_t,     # 新增：记录DIF值
 					'dea_value': dea_t      # 新增：记录DEA值
 				})
-			# elif is_macd_golden_cross and not is_above_zero_axis:
-			#     print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
+			elif is_macd_golden_cross and not is_above_zero_axis:
+				print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
 			
+		if len(qualified_candidates) == 0:
+			print("无符合买入条件的股票。")
+
 		# B. 相对强度排序
 		qualified_candidates.sort(key=lambda x: x['macd_strength'], reverse=True)
 		target_buys = qualified_candidates[:ContextInfo.hold_num]
