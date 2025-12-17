@@ -450,7 +450,7 @@ def handlebar(ContextInfo):
 					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
 
 
-			# 2. **【修改 3 核心】MACD 死叉检查 (14:40) - 使用 T 日当前分钟数据**
+			# 2. **【修改核心】MACD卖出逻辑检查 (14:40) - 包含原死叉和新三连降条件**
 			if current_time_str == CHECK_MACD_SELL_TIME and not should_sell: 
 				
 				# --- 获取完整的日线数据 + 当前分钟数据 ---
@@ -467,25 +467,41 @@ def handlebar(ContextInfo):
 				
 				df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
 
-				# 拼接 T 日的当前分钟收盘价
+				# 拼接 T 日的当前分钟收盘价 (14:40的价格)
 				close_series_full = pd.concat([df_daily['close'], pd.Series([current_price])])
 				
-				dif_series, dea_series, _ = calculate_macd(
+				# 计算 MACD 指标 (返回 DIF, DEA, MACD Hist)
+				dif_series, dea_series, hist_series = calculate_macd(
 					close_series_full, 
 					ContextInfo.MACD_SHORT, 
 					ContextInfo.MACD_LONG, 
 					ContextInfo.MACD_SIGNAL
 				)
 
-				if not pd.isna(dif_series.iloc[-1]):
+				if not pd.isna(dif_series.iloc[-1]) and len(hist_series) >= 3:
 					dif_t = dif_series.iloc[-1] 
 					dea_t = dea_series.iloc[-1] 
 					
-					if dif_t < dea_t: # T 日当前分钟死叉
+					# 获取柱状图数值 (CDMA)
+					hist_t = hist_series.iloc[-1]   # T日 (当前 14:40)
+					hist_t_1 = hist_series.iloc[-2] # T-1日 (昨日)
+					hist_t_2 = hist_series.iloc[-3] # T-2日 (前日)
+					
+					# --- 条件 1：原有死叉逻辑 ---
+					is_dead_cross = dif_t < dea_t
+					
+					# --- 条件 2：新增柱状图三连降 ---
+					is_hist_declining = (hist_t < hist_t_1) and (hist_t_1 < hist_t_2)
+					
+					if is_dead_cross:
 						should_sell = True
-						sell_reason = "MACD趋势已死叉 (T 日当前分钟死叉)"
-						print(f"[{current_time_log}] 触发卖出 {stock}：{sell_reason}")
-			
-			
+						sell_reason = f"MACD趋势已死叉 (DIF:{dif_t:.4f} < DEA:{dea_t:.4f})"
+					elif is_hist_declining:
+						should_sell = True
+						sell_reason = f"MACD柱状图连续3日下降: T:{hist_t:.4f} < T-1:{hist_t_1:.4f} < T-2:{hist_t_2:.4f}"
+					
+					if should_sell:
+						print(f"[{current_time_log}] 触发卖出信号 {stock}：{sell_reason}")
+
 			if should_sell and volume > 0:
 				execute_trade(False, stock, volume, current_price, ContextInfo, ContextInfo.account_id)
