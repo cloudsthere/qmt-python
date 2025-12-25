@@ -1,17 +1,42 @@
 # coding:gbk
 import pandas as pd
 import numpy as np
-import time
-import datetime 
+import time, os
+from datetime import datetime 
+from pathlib import Path
 
 class G(): pass
 
 g = G()
-
+C = None
+BASE_DIR = Path('D:\国金QMT交易端模拟\python')
 
 # --------------------------------------------------------
 # 【指标计算辅助函数】
 # --------------------------------------------------------
+def log(message):
+	global C
+	bar_timetag = C.get_bar_timetag(C.barpos)
+	current_time_log = timetag_to_datetime(bar_timetag, '%Y-%m-%d %H:%M')
+	# current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
+	# 获取当前时间对象
+	now = datetime.now()
+
+	# 转换为字符串
+	date_str = now.strftime("%Y-%m-%d")
+	# BASE_DIR = Path(os.getcwd())
+	# print(f"Base Directory: {BASE_DIR}")
+	print(f"[{current_time_log}] {message}")
+	if C.do_back_test:
+		log_file = BASE_DIR / f"logs/backtest/{C.strategyName}/{date_str}.txt"
+	else:
+		log_file = BASE_DIR / f"logs/prod/{C.strategyName}/{date_str}.txt"
+
+	if not log_file.parent.exists():
+		log_file.parent.mkdir(parents=True)
+    
+	with open(log_file, 'a', encoding='gb2312') as f:
+		f.write(f"[{current_time_log}]{str(message)}" + '\n')
 
 # 辅助函数：计算 ATR (Average True Range) - **V1.18.2 启用**
 def calculate_atr(df, period=14):
@@ -69,13 +94,13 @@ def get_current_positions(accountid, ContextInfo):
 
 def get_account_asset(account_id):
 	account = get_trade_detail_data(account_id, 'STOCK', 'ACCOUNT')
-	# print(account)
+	# log(account)
 	return account[0].m_dBalance
 
 
 def get_account_asset(account_id):
 	account = get_trade_detail_data(account_id, 'STOCK', 'ACCOUNT')
-	# print(account)
+	# log(account)
 	return account[0].m_dBalance
 
 def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id):
@@ -92,7 +117,7 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 	action = "买入" if is_buy else "卖出"
 	
 	if volume_final < 100 and is_buy: 
-		print(f"忽略: {stock_code} 买入量不足 100 股 ({volume_final})")
+		log(f"忽略: {stock_code} 买入量不足 100 股 ({volume_final})")
 		return
 
 	try:
@@ -109,10 +134,10 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 			userOrderId, 
 			ContextInfo
 		)
-		print(f"交易成功: {action} {stock_code}: {volume_final} 股 @ {price:.2f}")
+		log(f"交易成功: {action} {stock_code}: {volume_final} 股 @ {price:.2f}")
 		
 	except Exception as e:
-		print(f"交易失败: {action} {stock_code} {volume_final} 股 @ {price:.2f}. 错误: {e}")
+		log(f"交易失败: {action} {stock_code} {volume_final} 股 @ {price:.2f}. 错误: {e}")
 
 # --------------------------------------------------------
 # 【策略主体：init 和 handlebar】
@@ -120,11 +145,13 @@ def execute_trade(is_buy, stock_code, volume_abs, price, ContextInfo, account_id
 
 def init(ContextInfo):
 	# ContextInfo.do_back_test = False # 生产环境：设置为 False
-	print("策略初始化开始。")
+	# log("策略初始化开始。")
+	global C
+	C = ContextInfo
 	
 	# ---------------- 1. 策略参数设置 ----------------
 	ContextInfo.account_id = '40098981' if ContextInfo.do_back_test else '8887911006'
-	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.25.2" 
+	ContextInfo.strategyName = "股票趋势跟踪分钟级策略v1.26" 
 	ContextInfo.hold_num = 10
 	
 	# MACD 参数
@@ -135,7 +162,8 @@ def init(ContextInfo):
 	# **【V1.18.2 修改】动态 ATR 止损/过滤参数**
 	ContextInfo.ATR_PERIOD = 14      # ATR 计算周期
 	# ContextInfo.ATR_MULTIPLIER = 2.0 # ATR 止损乘数 (例如 2.0 代表 2倍 ATR 止损)
-	ContextInfo.ATR_MULTIPLIER = 1
+	# ContextInfo.ATR_MULTIPLIER = 1
+	ContextInfo.ATR_MULTIPLIER = 0.5
 	# ContextInfo.MAX_DAILY_DROP 参数不再使用
 	
 	# 历史数据量需要满足 MACD 和 ATR 的最大周期
@@ -153,12 +181,14 @@ def init(ContextInfo):
 	# ---------------- 2. 数据预下载 【动态计算 start_date】 ----------------
 	
 	# if ContextInfo.do_back_test:
-	#   start_date = "20250501"
-	#   end_date = ""
-	#   print(f"调试模式: 下载历史数据从 {start_date} 开始。")
-	#   for stock in ContextInfo.stock_pool: 
-	#       download_history_data(stock, "1m", start_date, end_date)
-	#   print("历史数据下载任务已发送。")
+	# 	# start_date = "20250101"
+	# 	start_date = "20231001"
+	# 	end_date = "20250101"
+	# 	log(f"调试模式: 下载历史数据从 {start_date} 开始。")
+	# 	for stock in ContextInfo.stock_pool: 
+	# 		# download_history_data(stock, "5m", start_date, end_date)
+	# 		download_history_data(stock, "1d", start_date, end_date)
+	# 	log("历史数据下载任务已发送。")
 	
 
 def handlebar(ContextInfo):
@@ -176,7 +206,7 @@ def handlebar(ContextInfo):
 	current_time_full = timetag_to_datetime(bar_timetag, '%Y%m%d%H%M%S')
 	current_day = timetag_to_datetime(bar_timetag, '%Y%m%d')
 	
-	START_TIME_STR = '09:31'
+	START_TIME_STR = '09:35'
 	OP_TIME_STR = '14:50' # **【修改 2】尾盘买入时间**
 	CHECK_MACD_SELL_TIME = '14:40' # **【修改 3】尾盘死叉卖出检查时间**
 	
@@ -184,7 +214,7 @@ def handlebar(ContextInfo):
 	# 【阶段一：每日数据初始化（早盘 09:31）】
 	# --------------------------------------------------------
 	if current_time_str >= START_TIME_STR and g.DAILY_DATE != current_day:
-		print(f"[{current_time_log}] 阶段一：每日数据初始化开始。")
+		log(f"阶段一：每日数据初始化开始。")
 		
 		all_codes = ContextInfo.stock_pool
 		daily_data = ContextInfo.get_market_data_ex(
@@ -204,10 +234,10 @@ def handlebar(ContextInfo):
 			
 			# 这里只需足够的历史数据用于计算 ATR
 			if df_daily is None:
-				print(f"[{current_time_log}] 获取 {stock} 日线数据失败。")
+				log(f"获取 {stock} 日线数据失败。")
 				continue
 			if len(df_daily) < ContextInfo.ATR_PERIOD + 1: 
-				print(f"[{current_time_log}] {stock} 日线数据不足，无法计算 ATR。")
+				log(f"{stock} 日线数据不足，无法计算 ATR。")
 				continue
 
 			df_daily['close'] = pd.to_numeric(df_daily['close'], errors='coerce')
@@ -245,16 +275,16 @@ def handlebar(ContextInfo):
 				'dynamic_drop_pct_prev_close': dynamic_drop_pct_prev_close # 【新增】用于止损 (基准：T-1 收盘价)
 			}
 
-		print(f"[{current_time_log}] 阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
+		log(f"阶段一：每日数据初始化完成。计算了 {len(g.DAILY_DATA)} 只股票指标。")
 
 		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
-		# print(curr_holdings_dict)
+		# log(curr_holdings_dict)
 
 		for stock, volume in curr_holdings_dict.items():
 			daily_info = g.DAILY_DATA.get(stock)
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct_stop = daily_info.get('dynamic_drop_pct_prev_close', np.nan) # 使用新的止损阈值
-			print(f"持仓 {stock}：T日开盘价 {t_day_open_price:.2f}, 动态ATR止损 (基准:T-1收盘价) {dynamic_drop_pct_stop*100:.2f}%")
+			log(f"持仓 {stock}：T日开盘价 {t_day_open_price:.2f}, 动态ATR止损 (基准:T-1收盘价) {dynamic_drop_pct_stop*100:.2f}%")
 
 		
 	# --------------------------------------------------------
@@ -263,26 +293,26 @@ def handlebar(ContextInfo):
 	if current_time_str == OP_TIME_STR:
 
 		
-		print(f"[{current_time_log}] 阶段二：买入检查开始。")
+		log(f"阶段二：买入检查开始。")
 
 		curr_holdings_dict = get_current_positions(ContextInfo.account_id, ContextInfo)
 		total_asset = get_account_asset(ContextInfo.account_id)
 		account = get_trade_detail_data(ContextInfo.account_id, 'STOCK', 'ACCOUNT')
-		# print(account)
+		# log(account)
 		available_asset = account[0].m_dAvailable
 		total_asset = account[0].m_dBalance
-		print(f"目前可用资金: {available_asset:.2f} 元, 账户总资产: {total_asset:.2f} 元")
-		# print(f"目前总资产: {total_asset:.2f} 元")
+		log(f"目前可用资金: {available_asset:.2f} 元, 账户总资产: {total_asset:.2f} 元")
+		# log(f"目前总资产: {total_asset:.2f} 元")
 		# total_asset = 1000000
 		
 		current_hold_count = len(curr_holdings_dict)
 		if current_hold_count >= ContextInfo.hold_num: 
-			print(f"[{current_time_log}] 阶段二：已满仓，不进行买入。")
+			log(f"[{current_time_log}] 阶段二：已满仓，不进行买入。")
 			return
 		
 		stocks_to_check = list(g.DAILY_DATA.keys())
 		if not stocks_to_check:
-			print("因缺少指标数据，无法执行买入检查。")
+			log("因缺少指标数据，无法执行买入检查。")
 			return
 
 		# A. 获取当前 14:50 的价格 (close) 和 T-1 日收盘价
@@ -298,14 +328,18 @@ def handlebar(ContextInfo):
 		qualified_candidates = []
 		
 		for stock in stocks_to_check:
+			# log(stock)
 			daily_info = g.DAILY_DATA.get(stock)
+			# log(daily_info)
 			op_close_bar = op_data.get(stock)
+			# log(op_close_bar)
 			
 			if daily_info is None or op_close_bar is None or op_close_bar.empty or np.isnan(daily_info['prev_day_close']):
-				print(f"[{current_time_log}] 阶段二：缺少指标数据，无法执行买入检查。")
+				log(f"[{current_time_log}] 阶段二：缺少指标数据，无法执行买入检查。")
 				continue
 
 			op_price = op_close_bar['close'].iloc[-1]
+			# log(op_price)
 			t_day_open_price = daily_info.get('t_day_open_price', 0)
 			dynamic_drop_pct = daily_info.get('dynamic_drop_pct', np.nan) # **【V1.18.2 动态 ATR 阈值】**
 
@@ -326,6 +360,7 @@ def handlebar(ContextInfo):
 
 			# 拼接 T 日的当前分钟收盘价
 			close_series_full = pd.concat([df_daily['close'], pd.Series([op_price])])
+			# log(close_series_full)
 			
 			dif_series, dea_series, _ = calculate_macd(
 				close_series_full, 
@@ -333,9 +368,15 @@ def handlebar(ContextInfo):
 				ContextInfo.MACD_LONG, 
 				ContextInfo.MACD_SIGNAL
 			)
+			# log('dif_series')
+			# log(dif_series)
+			# log('dea_series')
+			# log( dea_series)
+			# log(dif_series.iloc[-1])
+			# exit()
 
 			if pd.isna(dif_series.iloc[-1]) or len(dif_series) < 3:
-				print(f"[{current_time_log}] 阶段二：无法计算 MACD 指标，跳过 {stock}。")
+				log(f"[{current_time_log}] 阶段二：无法计算 MACD 指标，跳过 {stock}。")
 				continue
 				
 			dif_t_minus_1 = dif_series.iloc[-2] # T-1 的 DIF
@@ -359,7 +400,7 @@ def handlebar(ContextInfo):
 					
 					if current_drop_from_open < dynamic_drop_pct:
 						# 满足金叉，但日内跌幅超过动态限制 (例如：跌幅超过 2倍ATR)，不买入
-						print(f"[{current_time_log}] 过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
+						# log(f"过滤买入 {stock}: 日内跌幅 ({current_drop_from_open*100:.2f}%) 超过动态ATR阈值 ({dynamic_drop_pct*100:.2f}%)。当前分钟价: {op_price:.2f}，开盘价: {t_day_open_price:.2f}")
 						continue 
 						
 				qualified_candidates.append({
@@ -370,10 +411,11 @@ def handlebar(ContextInfo):
 					'dea_value': dea_t      # 新增：记录DEA值
 				})
 			elif is_macd_golden_cross and not is_above_zero_axis:
-				print(f"[{current_time_log}] 过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
+				# log(f"过滤买入 {stock}: MACD金叉但在0轴下方 (DIF={dif_t:.4f}, DEA={dea_t:.4f})")
+				pass
 			
 		if len(qualified_candidates) == 0:
-			print("无符合买入条件的股票。")
+			log("无符合买入条件的股票。")
 
 		# B. 相对强度排序
 		qualified_candidates.sort(key=lambda x: x['macd_strength'], reverse=True)
@@ -397,7 +439,7 @@ def handlebar(ContextInfo):
 					g.HOLDING_BUY_DATE[stock] = current_day 
 			
 		if len(target_buys) > 0:
-			print(f"[{current_time_log}] 买入操作完成。目标: {[item['code'] for item in target_buys]}")
+			log(f"买入操作完成。目标: {[item['code'] for item in target_buys]}")
 
 	# --------------------------------------------------------
 	# 【阶段三：持仓监控（MACD 死叉/T-1日收盘价跌幅 清仓）】
@@ -447,7 +489,7 @@ def handlebar(ContextInfo):
 				if current_daily_drop_from_base < dynamic_drop_pct_stop:
 					should_sell = True
 					sell_reason = f"日内/持仓跌幅 ({current_daily_drop_from_base*100:.2f}%) 超过动态ATR止损 ({dynamic_drop_pct_stop*100:.2f}%)，当前价: {current_price:.2f}，T-1收盘价: {base_price:.2f}"
-					print(f"[{current_time_log}] 触发止损 {stock}：{sell_reason}")
+					log(f"触发止损 {stock}：{sell_reason}")
 
 
 			# 2. **【修改核心】MACD卖出逻辑检查 (14:40) - 包含原死叉和新三连降条件**
@@ -501,7 +543,13 @@ def handlebar(ContextInfo):
 						sell_reason = f"MACD柱状图连续3日下降: T:{hist_t:.4f} < T-1:{hist_t_1:.4f} < T-2:{hist_t_2:.4f}"
 					
 					if should_sell:
-						print(f"[{current_time_log}] 触发卖出信号 {stock}：{sell_reason}")
+						log(f"触发卖出信号 {stock}：{sell_reason}")
 
 			if should_sell and volume > 0:
 				execute_trade(False, stock, volume, current_price, ContextInfo, ContextInfo.account_id)
+
+
+
+
+
+
